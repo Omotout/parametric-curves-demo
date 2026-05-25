@@ -102,8 +102,10 @@ export function init(renderer) {
         m.userData.hermiteIn = new THREE.Vector3();
         m.userData.hermiteOut = new THREE.Vector3();
         m.userData.hermiteCustom = false;
-        // デフォルトは smooth (狭義 C^1 Hermite)。Broken にすると UE5 CurveBreak 相当。
-        m.userData.tangentMode = 'smooth';
+        // tangentMode は anchor 単位で持つ:
+        //   Hermite モードでは常に 'smooth' 強制 (数学的定義: 1点1接線)
+        //   Bezier モードでは 'broken' デフォルト (各辺独立)、HUDで 'smooth' にも切替可
+        m.userData.tangentMode = 'broken';
         return m;
     }
 
@@ -411,10 +413,13 @@ export function init(renderer) {
         if (!anchor) return;
         const a = anchor.position;
         const newTangent = new THREE.Vector3();
-        // 表示スケールで割って「内部 outTangent (Bezier 換算 = T/3)」に変換して保存する。
         const scale = handleDisplayScale();
         const invScale = 1 / scale;
-        const shouldMirror = (state.curveModel === 'hermite' && anchor.userData.tangentMode === 'smooth');
+        // ミラーは anchor.userData.tangentMode === 'smooth' のときに発動。
+        //   Hermite モード: 数学的定義上 1点1接線なので常に smooth で固定 (= in = out)
+        //   Bezier モード: 各辺は独立な3次曲線なのでデフォルトは broken (in ≠ out)、
+        //                  HUD のトグルで smooth (anchor で C^1 接続) も選べる
+        const shouldMirror = (anchor.userData.tangentMode === 'smooth');
         if (handleMesh.userData.handleType === 'in') {
             newTangent.copy(a).sub(handleMesh.position).multiplyScalar(invScale);
             anchor.userData.inTangent.copy(newTangent);
@@ -426,7 +431,6 @@ export function init(renderer) {
         }
         anchor.userData.isCustom = true;
         syncHandleVisuals();
-        // Dashed ライン (ゴースト) の表示更新
         if (ghostLineObj) ghostLineObj.computeLineDistances();
         rebuildLine();
     }
@@ -554,7 +558,7 @@ export function init(renderer) {
         </label>
         <label><input type="checkbox" id="closeLoop"> Close loop</label>
         <label><input type="checkbox" id="showRiders" checked> Show riders</label>
-        <label id="tangentRow"><input type="checkbox" id="brokenTangent"> Broken tangent (UE5 CurveBreak: arrive ≠ leave)</label>
+        <label id="tangentRow"><input type="checkbox" id="smoothTangent"> Smooth tangent at anchor (C¹ continuity)</label>
         <label>Speed: <span id="spdLabel">0.30</span>
             <input type="range" id="spd" min="0.05" max="1.5" step="0.01" value="0.3">
         </label>
@@ -575,23 +579,26 @@ export function init(renderer) {
     const spdLabel = hud.querySelector('#spdLabel');
     const rdSlider = hud.querySelector('#rd');
     const rdLabel = hud.querySelector('#rdLabel');
-    const brokenTangentCheckbox = hud.querySelector('#brokenTangent');
+    const brokenTangentCheckbox = hud.querySelector('#smoothTangent');
     const toolInfo = hud.querySelector('#toolInfo');
     const cpInfo = hud.querySelector('#cpInfo');
 
     function refreshHudVisibility() {
-        // HUD 自体は常時表示。closeLoop だけ条件付きで disable する。
         const canClose = cpMeshes.length >= MIN_POINTS_TO_CLOSE;
         const isBezier = state.curveModel === 'bezier';
         const isHermite = state.curveModel === 'hermite';
         catmullModeRow.style.display = (isBezier || isHermite) ? 'none' : 'block';
-        // Broken tangent は Hermite モードで「アンカー選択中」だけ意味がある。
-        // (Bezier モードは辺ベースで点単位の tangentMode は使わないため非表示)
-        tangentRow.style.display = isHermite ? 'block' : 'none';
+        // Smooth tangent チェックは Bezier モード時のみ表示。
+        // Hermite は数学的定義上 1点1接線で常に smooth 固定なので切替UIなし。
+        // Bezier モードでは編集対象のアンカー (activeCP) または辺の B1/B2 anchor が必要。
+        // 辺を選択しているとき (activeEdge >= 0) は anchor が 2つあるが、ここでは
+        // activeCP がないので両アンカーの代表 (anchorA) を使う。
+        const bezierAnchor = activeCP || (activeEdge >= 0 ? cpMeshes[activeEdge] : null);
+        tangentRow.style.display = isBezier ? 'block' : 'none';
         closeLoopCheckbox.disabled = !canClose;
-        brokenTangentCheckbox.disabled = !isHermite || !activeCP;
-        if (activeCP) {
-            brokenTangentCheckbox.checked = activeCP.userData.tangentMode === 'broken';
+        brokenTangentCheckbox.disabled = !isBezier || !bezierAnchor;
+        if (bezierAnchor) {
+            brokenTangentCheckbox.checked = bezierAnchor.userData.tangentMode === 'smooth';
         }
         let modelLabel;
         if (isHermite) modelLabel = 'Cubic Hermite (anchor + tangent)';
@@ -637,11 +644,16 @@ export function init(renderer) {
     curveModelSelect.addEventListener('change', () => {
         const oldModel = state.curveModel;
         const newModel = curveModelSelect.value;
-        // 旧モードの編集値を保存 → 新モードの値を復元
-        // (Catmull-Rom モードはタンジェントを使わないので保存/復元しない)
         saveTangentsForMode(oldModel);
         state.curveModel = newModel;
         loadTangentsForMode(newModel);
+
+        // モード固有の tangentMode 強制
+        if (newModel === 'hermite') {
+            // 純粋な Hermite は 1点1接線 → 全 anchor を smooth 固定
+            for (const m of cpMeshes) m.userData.tangentMode = 'smooth';
+        }
+        // Bezier モードは anchor 単位の tangentMode を尊重 (デフォルト broken、UI で smooth 切替可)
 
         hideHandles();
         if (newModel === 'hermite') {
@@ -673,17 +685,17 @@ export function init(renderer) {
         rebuildRiders();
     });
     brokenTangentCheckbox.addEventListener('change', () => {
-        if (!activeCP) return;
-        activeCP.userData.tangentMode = brokenTangentCheckbox.checked ? 'broken' : 'smooth';
-        if (activeCP.userData.tangentMode === 'smooth') {
-            // Smooth に戻すときは現在選択中の側を基準にして反対側を再リンクする。
-            const selectedHandle = selection?.selected?.userData?.isHandle ? selection.selected : null;
-            if (selectedHandle?.userData.handleType === 'in') {
-                activeCP.userData.outTangent.copy(activeCP.userData.inTangent);
-            } else {
-                activeCP.userData.inTangent.copy(activeCP.userData.outTangent);
-            }
-            activeCP.userData.isCustom = true;
+        // Bezier モードでの「Smooth tangent」トグル。チェック ON で C^1 連続、OFF で独立。
+        // 編集対象 anchor を決める: activeCP > activeEdge の anchorA > 何もなし
+        const bezierAnchor = activeCP || (activeEdge >= 0 ? cpMeshes[activeEdge] : null);
+        if (!bezierAnchor) return;
+        const wantSmooth = brokenTangentCheckbox.checked;
+        bezierAnchor.userData.tangentMode = wantSmooth ? 'smooth' : 'broken';
+        if (wantSmooth) {
+            // 直近で動かしたハンドルを基準に反対側を点対称に揃える。
+            // 簡単のため、out 側に揃える (B1 の位置を基準にする)
+            bezierAnchor.userData.inTangent.copy(bezierAnchor.userData.outTangent);
+            bezierAnchor.userData.isCustom = true;
             syncHandleVisuals();
             rebuildLine();
         }
