@@ -1,0 +1,14 @@
+# レポート用素材 (公開リポジトリには含めない)
+practice-rebuild/
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Node (使ってないが念のため)
+node_modules/

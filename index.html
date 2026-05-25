@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>パラメトリック曲線デモ</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: sans-serif; background: #222; color: #eee; }
+        #tabs { position: fixed; top: 8px; left: 8px; z-index: 10; display: flex; gap: 4px; }
+        #tabs button {
+            background: #333; color: #ccc; border: 1px solid #555;
+            padding: 6px 14px; cursor: pointer; font-size: 14px;
+        }
+        #tabs button.active { background: #4a7; color: #fff; border-color: #6c9; }
+        canvas { display: block; }
+        #help {
+            position: fixed; left: 8px; bottom: 8px; z-index: 5;
+            background: rgba(0,0,0,0.55); padding: 8px 12px;
+            font-size: 12px; line-height: 1.4em; border-radius: 4px;
+            pointer-events: none; white-space: pre;
+        }
+        .hud {
+            position: fixed; top: 8px; right: 8px; z-index: 5;
+            background: rgba(0,0,0,0.55); padding: 10px 14px; border-radius: 4px;
+            font-size: 13px; min-width: 220px;
+        }
+        .hud label { display: block; margin: 4px 0; }
+        .hud input[type=range] { width: 100%; }
+        .details {
+            position: fixed; right: 8px; bottom: 8px; z-index: 5;
+            background: rgba(0,0,0,0.65); padding: 8px 12px; border-radius: 4px;
+            font-size: 11px; min-width: 220px;
+        }
+        .details h4 { margin: 0 0 4px 0; font-size: 12px; opacity: .8; }
+        .details .row { display: flex; align-items: center; gap: 4px; margin: 2px 0; }
+        .details .lbl { font-size: 10px; opacity: .7; }
+        .details label { width: 10px; opacity: .6; }
+        .details input { width: 52px; background: #222; color: #eee; border: 1px solid #444; padding: 2px 4px; font-size: 11px; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="tabs">
+        <div style="padding:6px 14px;background:#333;color:#ccc;border:1px solid #555;font-size:14px;">Spline Component (Catmull-Rom / Bezier / Hermite)</div>
+    </div>
+    <div id="help">[RMB] Look  [RMB+WASD/QE/Arrows] Fly  [Shift] x2
+[Wheel] Dolly   [MMB or LMB+RMB] Track   [RMB+Wheel] Camera speed   [Alt+LMB/RMB/MMB] Orbit/Dolly/Track
+[LMB] Select  [Esc] Deselect / release cursor
+Q/W/E/R: Select/Move/Rotate/Scale where available  [Space] Cycle tool  [F] Focus selected
+[Ctrl+LMB on spline] Insert pt   [Alt+drag gizmo] Duplicate/extend   [Del] Remove</div>
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html>
